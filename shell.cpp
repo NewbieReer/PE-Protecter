@@ -358,16 +358,22 @@ UINT AlignSize(UINT nSize, UINT nAlign)             //取整对齐函数
     return ((nSize + nAlign - 1) / nAlign * nAlign);
 }
 
-void FillZero(PCHAR addr, int num) {
-    memset(addr, 0, num);
-}
+void FillZero(HANDLE hFile, UINT nLength)
+{
+    CHAR	ch = 0;
+    DWORD   nbWritten;
 
+    while (nLength-- > 0)
+    {
+        WriteFile(hFile, &ch, 1, &nbWritten, NULL);
+    }
+}
 BOOL PackData(PCHAR pData, UINT nSize) {        //第一个参数是需要pack的地址，第二个参数是大小
     PCHAR pCloneData = NULL;
     UINT m_nSpaceSize = NULL;
 
-    m_nSpaceSize = aP_workmem_size(nSize);
-    PCHAR m_pWorkSpace = new CHAR[m_nSpaceSize];        //临时工作空间
+    m_nSpaceSize = aP_workmem_size(nSize);              //计算所需要的工作空间大小
+    PCHAR m_pWorkSpace = new CHAR[m_nSpaceSize];        //临时工作空间申请
     m_pPackData = new CHAR[nSize * 2];      //申请两倍的空间可能是害怕放不下吧，但是为tm什么压缩后会有可能大于两倍啊？
     //m_pPackData指的是压缩之后数据所在的地方
     pCloneData = (PCHAR)GlobalAlloc(GMEM_FIXED, nSize); //原始数据放到新的空间中进行备份
@@ -459,7 +465,7 @@ UINT FindFirstResADDR() {
 }
 
 
-BOOL PackFile(TCHAR* szFilePath, UINT FirstResADDR) {
+BOOL PackFile(TCHAR* szFilePath) {
     bool isPackRes = true;
     bool flag;
     DWORD NumberOfBytes = NULL;
@@ -523,10 +529,14 @@ BOOL PackFile(TCHAR* szFilePath, UINT FirstResADDR) {
         if (IsSectionCanPacked(pSecHeader)) {   //这个函数由书中提供
             PackData(pDataForPack, nNewSize);
             nRawSize = AlignSize(m_nPackSize, nFileAlign);
-            WriteFile(hPackFile, (PCHAR)m_pPackData, m_nPackSize, &NumberOfBytes, NULL);
-            if (nRawSize - m_nPackSize > 0) {
-                FillZero((PCHAR)hPackFile, nRawSize - m_nPackSize);
+            flag = WriteFile(hPackFile, (PCHAR)m_pPackData, m_nPackSize, &NumberOfBytes, NULL);
+            if (flag == false) {
+                WROPRE printf("Error in writing with section %s.\n", pSecHeader->Name);
+                return (int)false;
             }
+            if (nRawSize - m_nPackSize > 0) {
+                FillZero(hPackFile, nRawSize - m_nPackSize);//起初以为传入的句柄就是一个地址，然后发现报错
+            }                                                       //现在才知道这个句柄不能简单的认为是地址
             pSecHeader->SizeOfRawData = nRawSize;
             //下面的函数用来记录压缩后的节区信息，用于外壳运行时解压缩
             AddPackInfo(pSecHeader->VirtualAddress, pSecHeader->Misc.VirtualSize, pSecHeader->SizeOfRawData);
@@ -796,7 +806,8 @@ int main() {
     
     ClsRelocData();
         
+    PackFile((TCHAR *)"test.dmp");
     delete temp_dump_Import;
-
+    
     return 0;
 }
